@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  ExecuteName:
+    Type: String
+
+  EnvType:
+    Type: String
+
+  conectionDB:
+    Type: String
+
+  customerkey:
+    Type: String
+
+  UriTransporter:
+    Type: String
+
+  ExecuteTime:
+    Type: String
+    Default: "rate(3 hours)"
+
+Resources:
+  # lambda function from trasporter
+
+  ###################### LAMBDA STATUS - TRASPORTERS ######################
+
+  LambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  LambdaUpdateStatus:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaRole
+    Properties:
+      FunctionName: !Sub "Function-${ExecuteName}-reDeployment-${EnvType}"
+      Code:
+        ZipFile: > #inline code to simplify the sample
+          exports.handler = function(event, context) {
+            console.log("por fin, por fin");
+          };
+      Description: !Sub "Funcion lambda ${ExecuteName} reDeployment ${EnvType}"
+      Handler: index.handler
+      MemorySize: 150
+      Role:
+        Fn::GetAtt: LambdaRole.Arn
+      Runtime: nodejs16.x
+      Timeout: 900
+      Environment:
+        Variables:
+          connectionRealoadedDB: !Ref conectionDB
+          customerkey: !Ref customerkey
+          UriTransporter: !Ref UriTransporter
+
+  ###################### CloudWatch EventBridge  ######################
+
+  CronEvent: #logical name of the resource
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub "Disparador de eventos para lanzamiento de funcion lambda ${ExecuteName} ${EnvType}"
+      ScheduleExpression: !Ref ExecuteTime #when the event should trigger
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt: [LambdaUpdateStatus, "Arn"] #reference the lambda function by its arn
+          Id:
+            Ref: LambdaUpdateStatus #unique name of the target
+
+  LambdaInvokePermission: #logical name of the resource
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt: [LambdaUpdateStatus, "Arn"] #reference the lambda function by its arn
+      Action: lambda:InvokeFunction #allow invoking of lambda functions
+      Principal: events.amazonaws.com #grant permission to the events system
+      SourceArn:
+        Fn::GetAtt: [CronEvent, "Arn"] #define which event is allowed to trigger lambdas
+
